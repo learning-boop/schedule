@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlannerVisibility {
+  schedule
+  full
+}
+
+enum Role {
+  employee
+  manager
+  founder
+}
+
+model Organisation {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String
+  plan                String             @default("free")
+  seats               Int                @default(5)
+  planner_visibility  PlannerVisibility  @default(schedule)
+  allow_comments      Boolean            @default(false)
+  created_at          DateTime           @default(now()) @db.Timestamptz
+  updated_at          DateTime           @updatedAt @db.Timestamptz
+
+  users          User[]
+  invites        Invite[]
+  goal_templates GoalTemplate[]
+
+  @@map("organisations")
+}
+
+model User {
+  id          String   @id @db.Uuid // matches auth.users.id
+  org_id      String?  @db.Uuid
+  role        Role     @default(employee)
+  manager_id  String?  @db.Uuid
+  name        String
+  email       String   @unique
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @updatedAt @db.Timestamptz
+
+  organisation Organisation? @relation(fields: [org_id], references: [id])
+  manager      User?         @relation("ManagerReports", fields: [manager_id], references: [id])
+  reports      User[]        @relation("ManagerReports")
+
+  goals         Goal[]
+  time_blocks   TimeBlock[]
+  daily_pages   DailyPage[]
+  weekly_plans  WeeklyPlan[]
+  monthly_plans MonthlyPlan[]
+  pdf_exports   PdfExport[]
+
+  @@map("users")
+}
+
+model Goal {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id   String   @db.Uuid
+  title     String
+  rank      Int      @default(0)
+  deadline  DateTime? @db.Date
+  colour    String   @default("#6366f1")
+  status    String   @default("active")
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  user      User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  sub_goals SubGoal[]
+  actions   Action[]
+  time_blocks TimeBlock[]
+
+  @@map("goals")
+}
+
+model SubGoal {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goal_id   String    @db.Uuid
+  title     String
+  deadline  DateTime? @db.Date
+  done      Boolean   @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  goal Goal @relation(fields: [goal_id], references: [id], onDelete: Cascade)
+
+  @@map("sub_goals")
+}
+
+model Action {
+  id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goal_id String  @db.Uuid
+  title   String
+  done    Boolean @default(false)
+  order   Int     @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  goal Goal @relation(fields: [goal_id], references: [id], onDelete: Cascade)
+
+  @@map("actions")
+}
+
+model TimeBlock {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id   String   @db.Uuid
+  goal_id   String?  @db.Uuid
+  title     String
+  start     DateTime @db.Timestamptz
+  end       DateTime @db.Timestamptz
+  done      Boolean  @default(false)
+  work_note String?
+  category  String?
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  user User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  goal Goal? @relation(fields: [goal_id], references: [id], onDelete: SetNull)
+
+  @@map("time_blocks")
+}
+
+model DailyPage {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id  String   @db.Uuid
+  date     DateTime @db.Date
+  top3     Json     @default("[]")
+  matrix   Json     @default("{}")
+  water    Int      @default(0)
+  fitness  String?
+  notes    String?
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, date])
+  @@map("daily_pages")
+}
+
+model WeeklyPlan {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  week_start DateTime @db.Date
+  goals      Json     @default("[]")
+  quote      String?
+  slots      Json     @default("[]")
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, week_start])
+  @@map("weekly_plans")
+}
+
+model MonthlyPlan {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id  String   @db.Uuid
+  month    DateTime @db.Date
+  top3     Json     @default("[]")
+  focus    String?
+  swot     Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, month])
+  @@map("monthly_plans")
+}
+
+model GoalTemplate {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id     String   @db.Uuid
+  created_by String   @db.Uuid
+  title      String
+  colour     String   @default("#6366f1")
+  actions    Json     @default("[]") // string[] of action titles
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  organisation Organisation @relation(fields: [org_id], references: [id], onDelete: Cascade)
+
+  @@map("goal_templates")
+}
+
+model PdfExport {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  token      String   @unique @default(dbgenerated("gen_random_uuid()"))
+  filename   String
+  data       Bytes
+  expires_at DateTime @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("pdf_exports")
+}
+
+model Invite {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id     String   @db.Uuid
+  email      String
+  role       Role     @default(employee)
+  manager_id String?  @db.Uuid
+  token      String   @unique @default(dbgenerated("gen_random_uuid()"))
+  expires_at DateTime @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  organisation Organisation @relation(fields: [org_id], references: [id], onDelete: Cascade)
+
+  @@map("invites")
+}
