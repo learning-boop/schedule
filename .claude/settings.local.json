@@ -48,7 +48,12 @@
       "Bash(cd D:/creative_touch/schedule && npm install -D @playwright/test 2>&1 | tail -5)",
       "Bash(cd D:/creative_touch/schedule && npx playwright install chromium 2>&1 | tail -5)",
       "Bash(cd D:/creative_touch/schedule && npm run build 2>&1)",
-      "Bash(cd D:/creative_touch/schedule && npx prettier --write \"src/**/*.{ts,tsx}\" \"e2e/**/*.ts\" \"prisma7.config.ts\" \"playwright.config.ts\" 2>&1)"
+      "Bash(cd D:/creative_touch/schedule && npx prettier --write \"src/**/*.{ts,tsx}\" \"e2e/**/*.ts\" \"prisma7.config.ts\" \"playwright.config.ts\" 2>&1)",
+      "Bash(cd D:/creative_touch/schedule && node -e \"const p = require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts, null, 2\\)\\)\")",
+      "Bash(cd D:/creative_touch/schedule && node -e \"\nconst fs = require\\('fs'\\);\nconst pkg = JSON.parse\\(fs.readFileSync\\('package.json','utf8'\\)\\);\npkg.scripts.build = 'prisma generate && next build';\nfs.writeFileSync\\('package.json', JSON.stringify\\(pkg, null, 2\\) + '\\\\n'\\);\nconsole.log\\('Updated build script:', pkg.scripts.build\\);\n\")",
+      "Bash(cd D:/creative_touch/schedule && npx vercel whoami 2>&1)",
+      "Bash(cd D:/creative_touch/schedule && gh run list --limit 3 2>&1)",
+      "Bash(npm install:*)"
     ]
   }
 }
