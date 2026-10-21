@@ -28,6 +28,8 @@ export function useWeeklyPlan(weekStart: string) {
   const [review, setReview] = useState<WeekReview | null>(null);
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  // Changes waiting to be saved — merged so quick successive edits aren't lost
+  const pending = useRef<Partial<Pick<WeeklyPlan, "goals" | "quote" | "slots">>>({});
 
   const fetchPlan = useCallback(async () => {
     if (!weekStart) return;
@@ -52,16 +54,36 @@ export function useWeeklyPlan(weekStart: string) {
     fetchPlan();
   }, [fetchPlan]);
 
+  // Leaving this week (or the page): save anything still waiting
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      const body = pending.current;
+      if (weekStart && Object.keys(body).length > 0) {
+        pending.current = {};
+        fetch("/api/weekly-plans", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weekStart, ...body }),
+          keepalive: true,
+        });
+      }
+    };
+  }, [weekStart]);
+
   const save = useCallback(
     (updates: Partial<Pick<WeeklyPlan, "goals" | "quote" | "slots">>) => {
       setPlan((prev) => (prev ? { ...prev, ...updates } : prev));
+      pending.current = { ...pending.current, ...updates };
 
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
+        const body = pending.current;
+        pending.current = {};
         await fetch("/api/weekly-plans", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ weekStart, ...updates }),
+          body: JSON.stringify({ weekStart, ...body }),
         });
       }, 500);
     },

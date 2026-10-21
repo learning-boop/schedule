@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, UserPlus, UserMinus, Download, Shield, ArrowRightLeft } from "lucide-react";
+import {
+  ChevronLeft,
+  UserPlus,
+  UserMinus,
+  Download,
+  Shield,
+  ArrowRightLeft,
+  FileSpreadsheet,
+} from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ExportPanel } from "@/components/export/export-dialog";
+import { getBrowserTimeZone } from "@/lib/date-utils";
 
 type Member = { id: string; name: string; email: string; role: string; manager_id: string | null };
 type MeInfo = { id: string; role: string; org_id: string };
@@ -98,6 +108,13 @@ export default function AdminPage() {
     window.open("/api/admin/export", "_blank");
   }
 
+  function exportTasksCsv() {
+    window.open(
+      `/api/admin/export?format=csv&tz=${encodeURIComponent(getBrowserTimeZone())}`,
+      "_blank",
+    );
+  }
+
   const managers = members.filter((m) => m.role === "manager" || m.role === "founder");
 
   if (loading) {
@@ -130,6 +147,7 @@ export default function AdminPage() {
           variant="ghost"
           size="sm"
           className="h-7 gap-1 text-xs"
+          nativeButton={false}
           render={<Link href="/team" />}
         >
           <ChevronLeft className="h-3.5 w-3.5" /> Back to team
@@ -299,15 +317,24 @@ export default function AdminPage() {
               <Download className="h-4 w-4" /> Data Export
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground mb-3">
-              Download all company data (users, goals, schedules, plans) as JSON.
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Copy out everything your company has planned and done: every member&apos;s tasks (time
+              blocks with hours and what was worked on) as a spreadsheet, or all company data as
+              JSON. Planner PDFs for any member — or everyone — are below.
             </p>
-            <Button size="sm" variant="outline" onClick={exportData}>
-              <Download className="mr-1 h-3.5 w-3.5" /> Export All Data
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={exportTasksCsv}>
+                <FileSpreadsheet className="mr-1 h-3.5 w-3.5" /> All tasks (CSV)
+              </Button>
+              <Button size="sm" variant="outline" onClick={exportData}>
+                <Download className="mr-1 h-3.5 w-3.5" /> Export All Data
+              </Button>
+            </div>
           </CardContent>
         </Card>
+
+        <ExportPanel defaultWhose="all" />
       </div>
     </>
   );

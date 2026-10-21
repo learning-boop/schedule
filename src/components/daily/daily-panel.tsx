@@ -11,10 +11,7 @@ import { MatrixView } from "./matrix";
 import { Trackers } from "./trackers";
 import { Notes } from "./notes";
 import { DoneToday } from "./done-today";
-
-function formatDate(d: Date) {
-  return d.toISOString().split("T")[0];
-}
+import { formatDate, parseLocalDate } from "@/lib/date-utils";
 
 function formatDisplay(d: Date) {
   return d.toLocaleDateString(undefined, {
@@ -34,7 +31,7 @@ export function DailyPanel() {
   }, []);
 
   function goDay(offset: number) {
-    const d = new Date(date);
+    const d = parseLocalDate(date);
     d.setDate(d.getDate() + offset);
     setDate(formatDate(d));
   }

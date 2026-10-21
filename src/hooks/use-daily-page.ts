@@ -39,6 +39,8 @@ export function useDailyPage(date: string) {
   const [page, setPage] = useState<DailyPage | null>(null);
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  // Changes waiting to be saved — merged so quick successive edits aren't lost
+  const pending = useRef<Partial<DailyPage>>({});
 
   const fetchPage = useCallback(async () => {
     if (!date) return;
@@ -62,16 +64,36 @@ export function useDailyPage(date: string) {
     fetchPage();
   }, [fetchPage]);
 
+  // Leaving this date (or the page): save anything still waiting
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      const body = pending.current;
+      if (date && Object.keys(body).length > 0) {
+        pending.current = {};
+        fetch("/api/daily-pages", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, ...body }),
+          keepalive: true,
+        });
+      }
+    };
+  }, [date]);
+
   const save = useCallback(
     (updates: Partial<DailyPage>) => {
       setPage((prev) => (prev ? { ...prev, ...updates } : prev));
+      pending.current = { ...pending.current, ...updates };
 
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
+        const body = pending.current;
+        pending.current = {};
         await fetch("/api/daily-pages", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, ...updates }),
+          body: JSON.stringify({ date, ...body }),
         });
       }, 500);
     },

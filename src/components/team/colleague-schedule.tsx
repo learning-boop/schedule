@@ -1,13 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Clock, CheckCircle } from "lucide-react";
 import Link from "next/link";
+import FullCalendar, {
+  type CalendarRef,
+  type DatesSetInfo,
+  type EventInput,
+} from "@fullcalendar/react";
+import { CheckCircle, ChevronLeft, Clock, FileDown } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/date-utils";
+import { DEFAULT_EVENT_COLOUR, gcalBaseOptions, initials } from "@/components/calendar/gcal";
+import { formatDate, getBrowserTimeZone, getWeekStart } from "@/lib/date-utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type Block = {
   id: string;
@@ -25,6 +32,7 @@ type ScheduleData = {
   top3: { text: string; done: boolean }[];
   doneToday: { title: string; start: string; end: string }[];
   hoursThisWeek: number;
+  canExport?: boolean;
   goals?: {
     id: string;
     title: string;
@@ -36,220 +44,264 @@ type ScheduleData = {
   notes?: string | null;
 };
 
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function ColleagueSchedule() {
   const { userId } = useParams<{ userId: string }>();
-  const [date, setDate] = useState("");
+  const isMobile = useIsMobile();
+  const calendarRef = useRef<CalendarRef>(null);
   const [data, setData] = useState<ScheduleData | null>(null);
+  const [date, setDate] = useState("");
   const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState(false);
 
-  useEffect(() => {
-    setDate(formatDate(new Date()));
-  }, []);
-
-  useEffect(() => {
-    if (!date || !userId) return;
-    setLoading(true);
-    fetch(`/api/team/${userId}/schedule?date=${date}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        setData(d);
+  const load = useCallback(
+    async (range: { start: Date; end: Date }, day: string) => {
+      setLoading(true);
+      const params = new URLSearchParams({
+        date: day,
+        tz: getBrowserTimeZone(),
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+      });
+      try {
+        const res = await fetch(`/api/team/${userId}/schedule?${params}`);
+        if (!res.ok) {
+          setDenied(true);
+          setData(null);
+          return;
+        }
+        setDenied(false);
+        setData(await res.json());
+      } finally {
         setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [date, userId]);
+      }
+    },
+    [userId],
+  );
 
-  function goDay(offset: number) {
-    const d = new Date(date + "T00:00:00");
-    d.setDate(d.getDate() + offset);
-    setDate(formatDate(d));
+  function handleDatesSet(arg: DatesSetInfo) {
+    const api = calendarRef.current?.getApi();
+    const current = api ? api.getDate() : new Date();
+    // Side panel follows today when it is in view, otherwise the first visible day
+    const inView = new Date() >= arg.start && new Date() < arg.end;
+    const day = formatDate(inView ? new Date() : current);
+    setDate(day);
+    load({ start: arg.start, end: arg.end }, day);
   }
 
-  if (!date) return null;
+  const events: EventInput[] = useMemo(
+    () =>
+      (data?.blocks ?? []).map((b) => ({
+        id: b.id,
+        title: b.title,
+        start: b.start,
+        end: b.end,
+        color: b.goal?.colour || DEFAULT_EVENT_COLOUR,
+        className: b.done ? "gcal-done" : undefined,
+        extendedProps: { done: b.done, subtitle: b.goal?.title ?? b.category ?? "" },
+      })),
+    [data],
+  );
 
-  const dayLabel = new Date(date + "T00:00:00").toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  const baseOptions = useMemo(() => gcalBaseOptions(), []);
+
+  const dayLabel = date
+    ? new Date(date + "T00:00:00").toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })
+    : "";
+
+  const exportUrl = data?.canExport
+    ? `/api/export/preview?${new URLSearchParams({
+        type: "week",
+        weekStart: formatDate(getWeekStart(date ? new Date(date + "T00:00:00") : new Date())),
+        userId,
+        tz: getBrowserTimeZone(),
+      })}`
+    : null;
 
   return (
     <>
       <TopBar title={data?.user.name ?? "Colleague"} />
-      <div className="mx-auto w-full max-w-3xl p-6 space-y-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 text-xs"
-          render={<Link href="/team" />}
-        >
-          <ChevronLeft className="h-3.5 w-3.5" /> Back to team
-        </Button>
+      <div className={isMobile ? "flex flex-col" : "flex"}>
+        <div className="min-w-0 flex-1 space-y-3 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs"
+              nativeButton={false}
+              render={<Link href="/team" />}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Back to team
+            </Button>
+            <div className="flex-1" />
+            {exportUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                nativeButton={false}
+                render={<a href={exportUrl} target="_blank" rel="noopener" />}
+              >
+                <FileDown className="h-3.5 w-3.5" /> Week PDF
+              </Button>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => goDay(-1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="flex-1 text-center text-sm font-medium">{dayLabel}</span>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => goDay(1)}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setDate(formatDate(new Date()))}
-          >
-            Today
-          </Button>
+          <h2 className="sr-only">Schedule</h2>
+          <div className="gcal overflow-hidden h-[calc(100svh-8.5rem)] min-h-[480px] rounded-xl border bg-background">
+            <FullCalendar
+              ref={calendarRef}
+              {...baseOptions}
+              initialView={isMobile ? "timeGridDay" : "timeGridWeek"}
+              headerToolbar={{
+                left: "today prev,next title",
+                right: isMobile
+                  ? "timeGridDay,dayGridMonth"
+                  : "timeGridDay,timeGridWeek,dayGridMonth",
+              }}
+              height="100%"
+              editable={false}
+              selectable={false}
+              events={events}
+              datesSet={handleDatesSet}
+            />
+          </div>
+          {denied && (
+            <p className="text-center text-sm text-muted-foreground">
+              Not a colleague or no access.
+            </p>
+          )}
         </div>
 
-        {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
-
-        {!loading && !data && (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            Not a colleague or no access.
-          </p>
-        )}
-
-        {data && (
-          <>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5 text-sm">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <strong>{data.hoursThisWeek}h</strong>
-                <span className="text-muted-foreground">this week</span>
-              </div>
-              <span className="text-[10px] rounded-full border px-1.5 py-0.5 text-muted-foreground">
-                {data.user.role}
+        {/* Side panel */}
+        <aside
+          className={
+            isMobile
+              ? "space-y-4 border-t p-4"
+              : "w-80 shrink-0 space-y-4 overflow-y-auto border-l p-4"
+          }
+          style={isMobile ? undefined : { maxHeight: "calc(100svh - 3.5rem)" }}
+        >
+          {data && (
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#039be5] text-sm font-semibold text-white">
+                {initials(data.user.name)}
               </span>
+              <div className="min-w-0">
+                <p className="truncate font-medium">{data.user.name}</p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="capitalize">{data.user.role}</span> ·
+                  <Clock className="h-3.5 w-3.5" /> {data.hoursThisWeek}h this week
+                </p>
+              </div>
             </div>
+          )}
+          {loading && !data && <p className="text-sm text-muted-foreground">Loading...</p>}
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Top 3 Priorities</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                {(data.top3 || []).length === 0 && (
-                  <p className="text-xs text-muted-foreground">None set</p>
-                )}
-                {(data.top3 || []).map((item, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                      {i + 1}
-                    </span>
-                    <span
-                      className={`text-sm ${item.done ? "line-through text-muted-foreground" : ""}`}
-                    >
-                      {item.text}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+          {data && (
+            <>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Schedule · {dayLabel}
+              </p>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Schedule</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {data.blocks.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No blocks scheduled</p>
-                )}
-                {data.blocks.map((b) => {
-                  const start = new Date(b.start);
-                  const end = new Date(b.end);
-                  const timeStr = `${start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} – ${end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
-                  return (
-                    <div
-                      key={b.id}
-                      className={`flex items-center gap-2 rounded-md border p-2 text-sm ${b.done ? "bg-muted/50" : ""}`}
-                      style={{ borderLeftWidth: 3, borderLeftColor: b.goal?.colour ?? "#94a3b8" }}
-                    >
-                      {b.done && <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />}
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className={`font-medium truncate ${b.done ? "line-through text-muted-foreground" : ""}`}
-                        >
-                          {b.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{timeStr}</p>
-                      </div>
-                      {b.goal && (
-                        <span className="text-[10px] rounded border px-1 py-0.5 text-muted-foreground">
-                          {b.goal.title}
-                        </span>
-                      )}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Top 3 Priorities</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1.5">
+                  {(data.top3 || []).length === 0 && (
+                    <p className="text-xs text-muted-foreground">None set</p>
+                  )}
+                  {(data.top3 || []).map((item, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                        {i + 1}
+                      </span>
+                      <span
+                        className={`text-sm ${item.done ? "text-muted-foreground line-through" : ""}`}
+                      >
+                        {item.text}
+                      </span>
                     </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Done Today</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {data.doneToday.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Nothing completed yet</p>
-                )}
-                {data.doneToday.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                    <span>{d.title}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            {data.goals && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Goals</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {data.goals.map((g) => {
-                    const total = g.sub_goals.length + g.actions.length;
-                    const done =
-                      g.sub_goals.filter((s) => s.done).length +
-                      g.actions.filter((a) => a.done).length;
-                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                    return (
-                      <div key={g.id} className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ background: g.colour }}
-                          />
-                          <span className="text-sm font-medium">{g.title}</span>
-                          <span className="ml-auto text-xs text-muted-foreground">{pct}%</span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${pct}%`, background: g.colour }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                  ))}
                 </CardContent>
               </Card>
-            )}
 
-            {data.notes && (
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Notes</CardTitle>
+                  <CardTitle className="text-sm">Done</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm whitespace-pre-wrap">{data.notes}</p>
+                <CardContent className="space-y-1.5">
+                  {data.doneToday.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Nothing completed yet</p>
+                  )}
+                  {data.doneToday.map((d, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm">
+                      <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
+                      <span className="min-w-0 flex-1">{d.title}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {fmtTime(d.start)}
+                      </span>
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
-            )}
-          </>
-        )}
+
+              {data.goals && data.goals.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Goals</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {data.goals.map((g) => {
+                      const total = g.sub_goals.length + g.actions.length;
+                      const done =
+                        g.sub_goals.filter((s) => s.done).length +
+                        g.actions.filter((a) => a.done).length;
+                      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                      return (
+                        <div key={g.id} className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ background: g.colour }}
+                            />
+                            <span className="text-sm font-medium">{g.title}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{pct}%</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${pct}%`, background: g.colour }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+
+              {data.notes && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="whitespace-pre-wrap text-sm">{data.notes}</p>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </aside>
       </div>
     </>
   );

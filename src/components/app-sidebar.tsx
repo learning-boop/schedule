@@ -10,6 +10,7 @@ import {
   CalendarRange,
   BarChart3,
   Users,
+  UsersRound,
   LogOut,
 } from "lucide-react";
 import {
@@ -34,6 +35,7 @@ const navItems = [
   { title: "Month", href: "/month", icon: CalendarRange },
   { title: "Reports", href: "/reports", icon: BarChart3 },
   { title: "Team", href: "/team", icon: Users },
+  { title: "Team calendar", href: "/team/week", icon: UsersRound },
 ];
 
 export function AppSidebar() {

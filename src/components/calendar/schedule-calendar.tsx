@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import FullCalendar from "@fullcalendar/react";
-import dayGridPlugin from "@fullcalendar/react/daygrid";
-import timeGridPlugin from "@fullcalendar/react/timegrid";
-import interactionPlugin from "@fullcalendar/react/interaction";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import FullCalendar, {
+  type CalendarRef,
+  type DateSelectInfo,
+  type DatesSetInfo,
+  type EventClickInfo,
+  type EventDropInfo,
+  type EventInput,
+  type EventResizeDoneInfo,
+} from "@fullcalendar/react";
+import { Plus } from "lucide-react";
 import { BlockDialog, type BlockFormData } from "./block-dialog";
+import { DEFAULT_EVENT_COLOUR, gcalBaseOptions } from "./gcal";
+import { Button } from "@/components/ui/button";
 import { useGoals, type Goal } from "@/hooks/use-goals";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -21,18 +29,16 @@ type TimeBlock = {
   goal: { title: string; colour: string } | null;
 };
 
+type ViewName = "timeGridDay" | "timeGridWeek" | "dayGridMonth";
+
 function toLocalDatetime(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ScheduleCalendar({
-  initialView,
-}: {
-  initialView: "timeGridDay" | "timeGridWeek" | "dayGridMonth";
-}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const calendarRef = useRef<any>(null);
+export function ScheduleCalendar({ initialView }: { initialView: ViewName }) {
+  const calendarRef = useRef<CalendarRef>(null);
+  const rangeRef = useRef<{ start: string; end: string } | null>(null);
   const { goals } = useGoals();
   const isMobile = useIsMobile();
   const [blocks, setBlocks] = useState<TimeBlock[]>([]);
@@ -40,44 +46,64 @@ export function ScheduleCalendar({
   const [dialogInitial, setDialogInitial] = useState<Partial<BlockFormData>>({});
   const [filterGoal, setFilterGoal] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
 
-  const fetchBlocks = useCallback(
-    async (startStr?: string, endStr?: string) => {
-      const params = new URLSearchParams();
-      if (startStr) params.set("start", startStr);
-      if (endStr) params.set("end", endStr);
-      if (filterGoal) params.set("goalId", filterGoal);
-      if (filterCategory) params.set("category", filterCategory);
+  const fetchBlocks = useCallback(async () => {
+    const range = rangeRef.current;
+    if (!range) return;
+    const params = new URLSearchParams({ start: range.start, end: range.end });
+    if (filterGoal) params.set("goalId", filterGoal);
+    if (filterCategory) params.set("category", filterCategory);
 
-      const res = await fetch(`/api/time-blocks?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setBlocks(data);
+    const res = await fetch(`/api/time-blocks?${params}`);
+    if (res.ok) {
+      const data: TimeBlock[] = await res.json();
+      setBlocks(data);
+      if (!filterCategory) {
+        setCategories((prev) => {
+          const next = new Set(prev);
+          for (const b of data) if (b.category) next.add(b.category);
+          return [...next].sort();
+        });
       }
-    },
-    [filterGoal, filterCategory],
-  );
+    }
+  }, [filterGoal, filterCategory]);
 
+  // Refetch when filters change (the visible range is set by datesSet)
   useEffect(() => {
     fetchBlocks();
   }, [fetchBlocks]);
 
-  function handleDatesSet(arg: { startStr: string; endStr: string }) {
-    fetchBlocks(arg.startStr, arg.endStr);
+  function handleDatesSet(arg: DatesSetInfo) {
+    rangeRef.current = { start: arg.start.toISOString(), end: arg.end.toISOString() };
+    fetchBlocks();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleSelect(info: any) {
-    setDialogInitial({
-      start: toLocalDatetime(info.start),
-      end: toLocalDatetime(info.end),
-    });
+  function openNew(start: Date, end: Date) {
+    setDialogInitial({ start: toLocalDatetime(start), end: toLocalDatetime(end) });
     setDialogOpen(true);
-    calendarRef.current?.getApi?.()?.unselect();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleEventClick(info: any) {
+  function handleSelect(info: DateSelectInfo) {
+    openNew(info.start, info.end);
+    calendarRef.current?.getApi().unselect();
+  }
+
+  function handleNewClick() {
+    const api = calendarRef.current?.getApi();
+    const base = api ? api.getDate() : new Date();
+    const now = new Date();
+    const start = new Date(base);
+    // Today → next full hour; other days → 9:00
+    if (start.toDateString() === now.toDateString()) {
+      start.setHours(now.getHours() + 1, 0, 0, 0);
+    } else {
+      start.setHours(9, 0, 0, 0);
+    }
+    openNew(start, new Date(start.getTime() + 60 * 60 * 1000));
+  }
+
+  function handleEventClick(info: EventClickInfo) {
     const block = blocks.find((b) => b.id === info.event.id);
     if (!block) return;
 
@@ -94,9 +120,8 @@ export function ScheduleCalendar({
     setDialogOpen(true);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function handleEventDrop(info: any) {
-    await fetch(`/api/time-blocks/${info.event.id}`, {
+  async function persistMove(info: EventDropInfo | EventResizeDoneInfo) {
+    const res = await fetch(`/api/time-blocks/${info.event.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -104,18 +129,11 @@ export function ScheduleCalendar({
         end: info.event.end?.toISOString(),
       }),
     });
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function handleEventResize(info: any) {
-    await fetch(`/api/time-blocks/${info.event.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start: info.event.start?.toISOString(),
-        end: info.event.end?.toISOString(),
-      }),
-    });
+    if (!res.ok) {
+      info.revert();
+      return;
+    }
+    fetchBlocks();
   }
 
   async function handleSave(data: BlockFormData) {
@@ -159,33 +177,44 @@ export function ScheduleCalendar({
     fetchBlocks();
   }
 
-  const events = blocks.map((b) => ({
-    id: b.id,
-    title: b.title,
-    start: b.start,
-    end: b.end,
-    backgroundColor: b.done ? "#9ca3af" : b.goal?.colour || "#6366f1",
-    borderColor: b.done ? "#9ca3af" : b.goal?.colour || "#6366f1",
-    textColor: "#fff",
-    extendedProps: { done: b.done, category: b.category },
-    classNames: b.done ? ["opacity-60"] : [],
-  }));
+  const events: EventInput[] = useMemo(
+    () =>
+      blocks.map((b) => ({
+        id: b.id,
+        title: b.title,
+        start: b.start,
+        end: b.end,
+        color: b.goal?.colour || DEFAULT_EVENT_COLOUR,
+        className: b.done ? "gcal-done" : undefined,
+        extendedProps: {
+          done: b.done,
+          category: b.category,
+          subtitle: b.goal?.title ?? b.category ?? "",
+        },
+      })),
+    [blocks],
+  );
 
-  // Determine categories from blocks for filter
-  const categories = [...new Set(blocks.map((b) => b.category).filter(Boolean))] as string[];
+  const baseOptions = useMemo(() => gcalBaseOptions(), []);
 
-  const effectiveView = isMobile
-    ? initialView === "timeGridWeek"
-      ? "timeGridDay"
-      : initialView
-    : initialView;
+  const effectiveView: ViewName =
+    isMobile && initialView === "timeGridWeek" ? "timeGridDay" : initialView;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col gap-3">
+      {/* Create + filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          className="h-9 gap-1.5 rounded-full px-4 shadow-sm"
+          onClick={handleNewClick}
+        >
+          <Plus className="h-4 w-4" /> New block
+        </Button>
+        <div className="flex-1" />
         <select
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          aria-label="Filter by goal"
+          className="h-8 max-w-[12rem] rounded-md border border-input bg-background px-2 text-sm"
           value={filterGoal}
           onChange={(e) => setFilterGoal(e.target.value)}
         >
@@ -197,6 +226,7 @@ export function ScheduleCalendar({
           ))}
         </select>
         <select
+          aria-label="Filter by category"
           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
@@ -211,33 +241,27 @@ export function ScheduleCalendar({
       </div>
 
       {/* Calendar */}
-      <div className="fc-wrapper">
+      <div className="gcal overflow-hidden h-[calc(100svh-9rem)] min-h-[480px] rounded-xl border bg-background">
         <FullCalendar
+          key={effectiveView}
           ref={calendarRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          {...baseOptions}
           initialView={effectiveView}
           headerToolbar={{
-            left: "prev,next today",
-            center: "title",
+            left: "today prev,next title",
             right: isMobile ? "timeGridDay,dayGridMonth" : "timeGridDay,timeGridWeek,dayGridMonth",
           }}
-          slotMinTime="06:00:00"
-          slotMaxTime="22:00:00"
-          allDaySlot={false}
+          height="100%"
           selectable
+          selectMirror
           editable
           eventResizableFromStart
-          selectMirror
-          nowIndicator
-          height="auto"
           events={events}
           select={handleSelect}
           eventClick={handleEventClick}
-          eventDrop={handleEventDrop}
-          eventResize={handleEventResize}
+          eventDrop={persistMove}
+          eventResize={persistMove}
           datesSet={handleDatesSet}
-          slotDuration="00:30:00"
-          snapDuration="00:15:00"
         />
       </div>
 

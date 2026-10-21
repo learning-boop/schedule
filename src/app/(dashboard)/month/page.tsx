@@ -7,7 +7,7 @@ export default function MonthPage() {
   return (
     <>
       <TopBar title="Month" />
-      <div className="mx-auto w-full max-w-3xl p-6">
+      <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
         <MonthlyPlanner />
       </div>
     </>

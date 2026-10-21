@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useWeeklyPlan, type WeekGoal, type WeekSlot } from "@/hooks/use-weekly-plan";
-import { getWeekStart, formatDate, DAY_NAMES } from "@/lib/date-utils";
+import { getWeekStart, formatDate, parseLocalDate, DAY_NAMES } from "@/lib/date-utils";
 
 function CreatePlanForm({
   carryOver,
@@ -114,7 +114,7 @@ function SlotGrid({
   }
 
   function handleDragStart(e: React.DragEvent, slot: WeekSlot) {
-    const weekDate = new Date(weekStart);
+    const weekDate = parseLocalDate(weekStart);
     weekDate.setDate(weekDate.getDate() + slot.day);
     e.dataTransfer.setData(
       "text/plain",
@@ -190,7 +190,7 @@ export function WeeklyPlanner() {
   }, []);
 
   function goWeek(offset: number) {
-    const d = new Date(weekStart);
+    const d = parseLocalDate(weekStart);
     d.setDate(d.getDate() + offset * 7);
     setWeekStart(formatDate(d));
   }
@@ -203,7 +203,7 @@ export function WeeklyPlanner() {
     return <p className="text-sm text-muted-foreground">Loading...</p>;
   }
 
-  const weekEnd = new Date(weekStart);
+  const weekEnd = parseLocalDate(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 6);
   const weekLabel = `${new Date(weekStart + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 

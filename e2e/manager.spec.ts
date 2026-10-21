@@ -21,7 +21,7 @@ test.describe("Manager flow", () => {
 
   test("can view team week view", async ({ page }) => {
     await page.goto("/team/week");
-    await expect(page.locator("text=Team Week")).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("text=Team calendar").first()).toBeVisible({ timeout: 10000 });
   });
 
   test("can invite an employee", async ({ page }) => {

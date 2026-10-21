@@ -6,6 +6,7 @@ import { ChevronLeft, Activity, CheckCircle, Clock } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { getBrowserTimeZone } from "@/lib/date-utils";
 
 type NowCard = {
   user: { id: string; name: string; role: string };
@@ -25,14 +26,14 @@ export default function RightNowPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/team/now")
+    fetch(`/api/team/now?tz=${encodeURIComponent(getBrowserTimeZone())}`)
       .then((r) => (r.ok ? r.json() : []))
       .then(setCards)
       .finally(() => setLoading(false));
 
     // Auto-refresh every 60s
     const interval = setInterval(() => {
-      fetch("/api/team/now")
+      fetch(`/api/team/now?tz=${encodeURIComponent(getBrowserTimeZone())}`)
         .then((r) => (r.ok ? r.json() : []))
         .then(setCards);
     }, 60000);

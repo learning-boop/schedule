@@ -18,8 +18,8 @@ export function DoneToday({ date, top3 }: { date: string; top3: Top3Item[] }) {
 
   useEffect(() => {
     async function fetchDone() {
-      const dayStart = new Date(date);
-      const dayEnd = new Date(date);
+      const dayStart = new Date(date + "T00:00:00"); // local midnight
+      const dayEnd = new Date(dayStart);
       dayEnd.setDate(dayEnd.getDate() + 1);
 
       const res = await fetch(

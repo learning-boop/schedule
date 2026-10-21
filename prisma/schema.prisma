@@ -164,6 +164,8 @@ model MonthlyPlan {
   top3     Json     @default("[]")
   focus    String?
   swot     Json     @default("{}")
+  /// Workbook "Date and Day" grid (Week 1–5 × Mon–Sun): { "<day of month>": "plan text" }
+  day_plans Json    @default("{}")
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 

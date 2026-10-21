@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
+import { localDateStr, safeTimeZone, zonedDayRange } from "@/lib/tz";
 
-/** GET /api/team/now — "Right now" board: one card per person */
-export async function GET() {
+/** GET /api/team/now?tz=Area/City — "Right now" board: one card per person */
+export async function GET(request: Request) {
   const me = await getAuthUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!me.org_id) return NextResponse.json({ error: "No organisation" }, { status: 403 });
 
+  const tz = safeTimeZone(new URL(request.url).searchParams.get("tz"));
   const now = new Date();
-  const todayStr = now.toISOString().split("T")[0];
-  const todayStart = new Date(todayStr + "T00:00:00Z");
-  const todayEnd = new Date(todayStr + "T23:59:59Z");
+  // "Today" is the viewer's local day, not the server's (UTC) day
+  const { start: todayStart, end: todayEnd } = zonedDayRange(localDateStr(now, tz), tz);
 
   const users = await prisma.user.findMany({
     where: { org_id: me.org_id },
@@ -24,8 +25,8 @@ export async function GET() {
   const allBlocks = await prisma.timeBlock.findMany({
     where: {
       user_id: { in: userIds },
-      start: { gte: todayStart },
-      end: { lte: todayEnd },
+      start: { lt: todayEnd },
+      end: { gt: todayStart },
     },
     include: { goal: { select: { title: true, colour: true } } },
     orderBy: { start: "asc" },

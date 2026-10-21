@@ -77,7 +77,7 @@ export default function TeamPage() {
             className="h-8 text-xs"
             render={<Link href="/team/week" />}
           >
-            Team Week
+            Team calendar
           </Button>
           {me && (me.role === "manager" || me.role === "founder") && (
             <Button
