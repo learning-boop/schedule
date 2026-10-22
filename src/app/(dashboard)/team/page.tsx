@@ -7,6 +7,7 @@ import { TopBar } from "@/components/top-bar";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { NoCompany } from "@/components/team/no-company";
 
 type Member = { id: string; name: string; email: string; role: string; manager_id: string | null };
 type Group = { managerId: string | null; managerName: string | null; members: Member[] };
@@ -19,12 +20,14 @@ export default function TeamPage() {
   const [me, setMe] = useState<MeInfo | null>(null);
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [noCompany, setNoCompany] = useState(false);
 
   useEffect(() => {
     (async () => {
       const res = await fetch(
         `/api/team/members${search ? `?q=${encodeURIComponent(search)}` : ""}`,
       );
+      if (res.status === 403) setNoCompany(true);
       if (res.ok) {
         const data = await res.json();
         setGroups(data.grouped);
@@ -41,6 +44,17 @@ export default function TeamPage() {
         <TopBar title="Team" />
         <div className="p-6">
           <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </>
+    );
+  }
+
+  if (noCompany) {
+    return (
+      <>
+        <TopBar title="Team" />
+        <div className="mx-auto w-full max-w-3xl p-6">
+          <NoCompany />
         </div>
       </>
     );

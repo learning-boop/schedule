@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { initials, personColour } from "@/components/calendar/gcal";
 import { TeamDayGrid, type TeamBlock, type TeamMember } from "./team-day-grid";
 import { TeamWeekTimeline } from "./team-week-timeline";
+import { NoCompany } from "./no-company";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 type View = "day" | "week";
@@ -47,6 +48,7 @@ export function TeamSchedule() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [noCompany, setNoCompany] = useState(false);
   const [popover, setPopover] = useState<PopoverState>(null);
 
   // Client-only clock (avoids hydration mismatch); ticks every minute
@@ -75,6 +77,10 @@ export function TeamSchedule() {
           end: range.end.toISOString(),
         });
         const res = await fetch(`/api/team/calendar?${params}`);
+        if (res.status === 403) {
+          setNoCompany(true);
+          return;
+        }
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           setError(data.error || "Could not load the team schedule");
@@ -129,6 +135,7 @@ export function TeamSchedule() {
     return map;
   }, [blocks]);
 
+  if (noCompany) return <NoCompany />;
   if (!anchor || !now) return null;
 
   function shift(n: number) {

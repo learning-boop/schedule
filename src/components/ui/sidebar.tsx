@@ -142,6 +142,17 @@ function SidebarProvider({
   );
 }
 
+const subscribeNothing = () => () => {};
+
+/** false while React hydrates server HTML, true afterwards (and on client-only mounts). */
+function useHydrated() {
+  return React.useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
+}
+
 function Sidebar({
   side = "left",
   variant = "sidebar",
@@ -156,6 +167,10 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  // The sidebar hydrates in its own Suspense pass, after the provider has
+  // already detected a phone. Render the server's (desktop) markup for that
+  // first pass, then switch to the phone drawer — avoids a hydration error.
+  const hydrated = useHydrated();
 
   if (collapsible === "none") {
     return (
@@ -172,7 +187,7 @@ function Sidebar({
     );
   }
 
-  if (isMobile) {
+  if (isMobile && hydrated) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent

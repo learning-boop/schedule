@@ -7,6 +7,7 @@ import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getBrowserTimeZone } from "@/lib/date-utils";
+import { NoCompany } from "@/components/team/no-company";
 
 type NowCard = {
   user: { id: string; name: string; role: string };
@@ -24,10 +25,14 @@ type NowCard = {
 export default function RightNowPage() {
   const [cards, setCards] = useState<NowCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [noCompany, setNoCompany] = useState(false);
 
   useEffect(() => {
     fetch(`/api/team/now?tz=${encodeURIComponent(getBrowserTimeZone())}`)
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => {
+        if (r.status === 403) setNoCompany(true);
+        return r.ok ? r.json() : [];
+      })
       .then(setCards)
       .finally(() => setLoading(false));
 
@@ -54,6 +59,7 @@ export default function RightNowPage() {
         </Button>
 
         {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+        {noCompany && <NoCompany />}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((c) => (
