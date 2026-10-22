@@ -308,6 +308,18 @@
   opacity: 0.62;
 }
 
+/* An invite you haven't answered: white block with a dashed outline */
+.gcal-block {
+  position: relative;
+}
+.gcal-pending-outline {
+  position: absolute;
+  inset: -2px -4px;
+  border: 1.5px dashed;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 /* Month view rows: dot · time · title */
 .gcal-row-event {
   display: flex;

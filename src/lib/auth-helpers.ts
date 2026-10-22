@@ -13,8 +13,33 @@ export async function getAuthUser() {
     where: { id: user.id },
     include: { organisation: true },
   });
+  if (dbUser || !user.email) return dbUser;
 
-  return dbUser;
+  // The database trigger normally creates this row at sign-up; create it here
+  // if it is missing so a new account never ends up half set up.
+  try {
+    const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+    const name =
+      (typeof meta.name === "string" && meta.name.trim()) ||
+      (typeof meta.full_name === "string" && meta.full_name.trim()) ||
+      user.email.split("@")[0];
+    return await prisma.user.upsert({
+      where: { id: user.id },
+      update: {},
+      create: { id: user.id, email: user.email.toLowerCase(), name },
+      include: { organisation: true },
+    });
+  } catch (err) {
+    console.error("Could not create the user row:", err);
+    return null;
+  }
+}
+
+export type AuthUser = NonNullable<Awaited<ReturnType<typeof getAuthUser>>>;
+
+/** JSON error helper for route handlers */
+export function jsonError(message: string, status: number, extra: Record<string, unknown> = {}) {
+  return Response.json({ error: message, ...extra }, { status });
 }
 
 /** Check if the viewer is in the same org as the target user. Returns the target user or null. */

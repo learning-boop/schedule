@@ -27,6 +27,8 @@ export async function GET(request: Request) {
       user_id: { in: userIds },
       start: { lt: todayEnd },
       end: { gt: todayStart },
+      // An invite nobody has accepted yet isn't what someone is doing
+      OR: [{ rsvp: null }, { rsvp: { not: "pending" } }],
     },
     include: { goal: { select: { title: true, colour: true } } },
     orderBy: { start: "asc" },

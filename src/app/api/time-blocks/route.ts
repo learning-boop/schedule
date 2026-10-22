@@ -25,7 +25,17 @@ export async function GET(request: Request) {
 
   const blocks = await prisma.timeBlock.findMany({
     where,
-    include: { goal: { select: { title: true, colour: true } } },
+    include: {
+      goal: { select: { title: true, colour: true } },
+      meeting: {
+        select: {
+          id: true,
+          organiser_id: true,
+          organiser: { select: { name: true } },
+          _count: { select: { guests: true } },
+        },
+      },
+    },
     orderBy: { start: "asc" },
   });
 

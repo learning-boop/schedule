@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { ensurePlannerSchema } from "@/lib/schema-guard";
 import {
   addDays,
   dateLabel,
@@ -137,8 +136,6 @@ export async function collectPlannerPages(
   const plan = planExport(req, today);
   if (!plan.ok) return plan;
 
-  await ensurePlannerSchema();
-
   const pages: PlannerPage[] = [];
 
   // ── Goals page ────────────────────────────────────────────────
@@ -212,6 +209,8 @@ export async function collectPlannerPages(
         user_id: userId,
         start: { lt: zonedTimeToUtc(addDays(blockTo, 1), tz) },
         end: { gt: zonedTimeToUtc(blockFrom, tz) },
+        // Meeting invites that haven't been accepted aren't part of the plan
+        OR: [{ rsvp: null }, { rsvp: { not: "pending" } }],
       },
       select: {
         title: true,

@@ -34,13 +34,20 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith("/signup") &&
     !request.nextUrl.pathname.startsWith("/auth") &&
     !request.nextUrl.pathname.startsWith("/invite") &&
+    !request.nextUrl.pathname.startsWith("/api/invites/lookup") &&
     !request.nextUrl.pathname.startsWith("/landing") &&
     !request.nextUrl.pathname.startsWith("/privacy") &&
     !request.nextUrl.pathname.startsWith("/terms") &&
     !request.nextUrl.pathname.startsWith("/api/cron")
   ) {
     const url = request.nextUrl.clone();
+    const back = request.nextUrl.pathname + request.nextUrl.search;
     url.pathname = "/login";
+    // Come back here after signing in (pages only, not API calls)
+    url.search =
+      back !== "/" && !request.nextUrl.pathname.startsWith("/api/")
+        ? `?next=${encodeURIComponent(back)}`
+        : "";
     return NextResponse.redirect(url);
   }
 

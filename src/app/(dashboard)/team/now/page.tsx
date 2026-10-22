@@ -53,6 +53,7 @@ export default function RightNowPage() {
           variant="ghost"
           size="sm"
           className="h-7 gap-1 text-xs"
+          nativeButton={false}
           render={<Link href="/team" />}
         >
           <ChevronLeft className="h-3.5 w-3.5" /> Back to team

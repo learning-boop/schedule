@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { ensurePlannerSchema } from "@/lib/schema-guard";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -13,8 +12,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const weekStart = searchParams.get("weekStart");
   if (!weekStart) return NextResponse.json({ error: "weekStart required" }, { status: 400 });
-
-  await ensurePlannerSchema();
 
   let plan = await prisma.weeklyPlan.findUnique({
     where: { user_id_week_start: { user_id: user.id, week_start: new Date(weekStart) } },
@@ -51,8 +48,6 @@ export async function PUT(request: Request) {
   const body = await request.json();
   const { weekStart, goals, quote, slots } = body;
   if (!weekStart) return NextResponse.json({ error: "weekStart required" }, { status: 400 });
-
-  await ensurePlannerSchema();
 
   const plan = await prisma.weeklyPlan.upsert({
     where: { user_id_week_start: { user_id: user.id, week_start: new Date(weekStart) } },

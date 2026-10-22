@@ -6,7 +6,8 @@ const MAX_RANGE_MS = 45 * 24 * 60 * 60 * 1000;
 
 /**
  * GET /api/team/calendar?start=ISO&end=ISO
- * Everyone in the company, with all of their time blocks overlapping the range.
+ * Everyone in the company (with their team), with all of their time blocks
+ * overlapping the range, plus the company's working hours for booking.
  * (Everyone in a company can see each other's schedule.)
  */
 export async function GET(request: Request) {
@@ -24,11 +25,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Range too large (max 45 days)" }, { status: 400 });
   }
 
-  const members = await prisma.user.findMany({
-    where: { org_id: me.org_id },
-    select: { id: true, name: true, role: true, manager_id: true },
-    orderBy: { name: "asc" },
-  });
+  const [members, teams] = await Promise.all([
+    prisma.user.findMany({
+      where: { org_id: me.org_id },
+      select: { id: true, name: true, role: true, manager_id: true, team_id: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.team.findMany({
+      where: { org_id: me.org_id },
+      select: { id: true, name: true, lead_id: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const blocks = await prisma.timeBlock.findMany({
     where: {
@@ -44,7 +52,10 @@ export async function GET(request: Request) {
       end: true,
       done: true,
       category: true,
+      meeting_id: true,
+      rsvp: true,
       goal: { select: { title: true, colour: true } },
+      meeting: { select: { organiser_id: true } },
     },
     orderBy: { start: "asc" },
   });
@@ -52,5 +63,15 @@ export async function GET(request: Request) {
   // Put the viewer first, then everyone else alphabetically
   members.sort((a, b) => (a.id === me.id ? -1 : b.id === me.id ? 1 : a.name.localeCompare(b.name)));
 
-  return NextResponse.json({ me: { id: me.id, role: me.role }, members, blocks });
+  const org = me.organisation!;
+  return NextResponse.json({
+    me: { id: me.id, role: me.role, team_id: me.team_id },
+    org: { work_days: org.work_days, work_start: org.work_start, work_end: org.work_end },
+    teams,
+    members,
+    blocks: blocks.map(({ meeting, ...b }) => ({
+      ...b,
+      organiser_id: meeting?.organiser_id ?? null,
+    })),
+  });
 }

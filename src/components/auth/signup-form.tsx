@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+/**
+ * Create an account. The company is set up afterwards on the Welcome screen
+ * (join the company that invited you, or start a new one) — that works whether
+ * or not Supabase asks people to confirm their email first.
+ */
 export function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -15,10 +21,14 @@ export function SignupForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [wantsCompany, setWantsCompany] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkEmail, setCheckEmail] = useState(false);
+
+  // Invite emails used to link here; the invite page now handles joining
+  useEffect(() => {
+    if (inviteToken) router.replace(`/invite/${encodeURIComponent(inviteToken)}`);
+  }, [inviteToken, router]);
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
@@ -26,68 +36,57 @@ export function SignupForm() {
     setError(null);
 
     const supabase = createClient();
-    const { error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: {
+        data: { name },
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/welcome`,
+      },
     });
+    setLoading(false);
 
     if (authError) {
       setError(authError.message);
-      setLoading(false);
       return;
     }
-
-    // If invite token, accept it
-    if (inviteToken) {
-      const res = await fetch("/api/invites/accept", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: inviteToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to accept invite");
-        setLoading(false);
-        return;
-      }
+    if (data.session) {
+      router.push("/welcome");
+      router.refresh();
+    } else if (data.user && (data.user.identities?.length ?? 0) === 0) {
+      setError("An account with this email already exists. Sign in instead.");
+    } else {
+      setCheckEmail(true);
     }
+  }
 
-    // If creating a company
-    if (wantsCompany && companyName.trim() && !inviteToken) {
-      const res = await fetch("/api/company/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: companyName.trim() }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to create company");
-        setLoading(false);
-        return;
-      }
-    }
-
-    router.push("/");
-    router.refresh();
+  if (checkEmail) {
+    return (
+      <div className="space-y-3 rounded-lg border bg-card p-6 shadow-sm">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+          <MailCheck className="h-5 w-5" />
+        </span>
+        <h1 className="text-xl font-semibold">Check your email</h1>
+        <p className="text-sm text-muted-foreground">
+          We sent a confirmation link to <b className="text-foreground">{email}</b>. Open it to
+          finish setting up — then you can start your company or join your team.
+        </p>
+      </div>
+    );
   }
 
   return (
     <div className="rounded-lg border bg-card p-6 shadow-sm">
-      <h1 className="mb-6 text-center text-2xl font-semibold">
-        {inviteToken ? "Accept Invite" : "Create account"}
-      </h1>
-
-      {inviteToken && (
-        <p className="mb-4 text-sm text-center text-muted-foreground">
-          Sign up to accept your team invite.
-        </p>
-      )}
+      <h1 className="mb-1 text-center text-2xl font-semibold">Create account</h1>
+      <p className="mb-6 text-center text-sm text-muted-foreground">
+        Next, you’ll start your company or join your team.
+      </p>
 
       <form onSubmit={handleSignup} className="space-y-4">
         <Input
           type="text"
           placeholder="Full name"
+          aria-label="Full name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -95,46 +94,24 @@ export function SignupForm() {
         <Input
           type="email"
           placeholder="Email"
+          aria-label="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
         />
         <Input
           type="password"
-          placeholder="Password (min 6 chars)"
+          placeholder="Password (at least 8 characters)"
+          aria-label="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={6}
+          minLength={8}
         />
-
-        {/* Company creation toggle — only when NOT accepting an invite */}
-        {!inviteToken && (
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={wantsCompany}
-                onChange={(e) => setWantsCompany(e.target.checked)}
-                className="h-4 w-4 rounded"
-              />
-              I'm creating a company account
-            </label>
-            {wantsCompany && (
-              <Input
-                type="text"
-                placeholder="Company name"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                required={wantsCompany}
-              />
-            )}
-          </div>
-        )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "Creating..." : inviteToken ? "Sign up & join team" : "Create account"}
+          {loading ? "Creating..." : "Create account"}
         </Button>
       </form>
 

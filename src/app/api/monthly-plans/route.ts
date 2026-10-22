@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { ensurePlannerSchema } from "@/lib/schema-guard";
 
 const EMPTY_SWOT = { strengths: "", weaknesses: "", opportunities: "", threats: "" };
 
@@ -30,8 +29,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month");
   if (!month) return NextResponse.json({ error: "month required (YYYY-MM-DD)" }, { status: 400 });
-
-  await ensurePlannerSchema();
 
   let plan = await prisma.monthlyPlan.findUnique({
     where: { user_id_month: { user_id: user.id, month: new Date(month) } },
@@ -64,8 +61,6 @@ export async function PUT(request: Request) {
   const { month, top3, focus, swot } = body;
   if (!month) return NextResponse.json({ error: "month required" }, { status: 400 });
   const day_plans = cleanDayPlans(body.day_plans);
-
-  await ensurePlannerSchema();
 
   const plan = await prisma.monthlyPlan.upsert({
     where: { user_id_month: { user_id: user.id, month: new Date(month) } },

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
-import { ensurePlannerSchema } from "@/lib/schema-guard";
 import { clockTime, localDateStr, safeTimeZone } from "@/lib/tz";
 
 function csvCell(v: unknown): string {
@@ -89,8 +88,6 @@ export async function GET(request: Request) {
       },
     });
   }
-
-  await ensurePlannerSchema();
 
   const [goals, timeBlocks, dailyPages, weeklyPlans, monthlyPlans] = await Promise.all([
     prisma.goal.findMany({

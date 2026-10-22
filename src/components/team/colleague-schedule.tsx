@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import FullCalendar, {
@@ -8,13 +8,15 @@ import FullCalendar, {
   type DatesSetInfo,
   type EventInput,
 } from "@fullcalendar/react";
-import { CheckCircle, ChevronLeft, Clock, FileDown } from "lucide-react";
+import { CheckCircle, ChevronLeft, Clock, FileDown, Plus } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DEFAULT_EVENT_COLOUR, gcalBaseOptions, initials } from "@/components/calendar/gcal";
 import { formatDate, getBrowserTimeZone, getWeekStart } from "@/lib/date-utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { BookMeetingDialog, type BookInitial } from "@/components/meetings/book-meeting-dialog";
+import { onCalendarRefresh } from "@/lib/app-events";
 
 type Block = {
   id: string;
@@ -24,6 +26,8 @@ type Block = {
   done: boolean;
   category: string | null;
   goal: { title: string; colour: string } | null;
+  meeting_id?: string | null;
+  rsvp?: string | null;
 };
 
 type ScheduleData = {
@@ -56,6 +60,9 @@ export function ColleagueSchedule() {
   const [date, setDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [bookOpen, setBookOpen] = useState(false);
+  const [bookInitial, setBookInitial] = useState<BookInitial | undefined>(undefined);
+  const rangeRef = useRef<{ start: Date; end: Date } | null>(null);
 
   const load = useCallback(
     async (range: { start: Date; end: Date }, day: string) => {
@@ -89,7 +96,27 @@ export function ColleagueSchedule() {
     const inView = new Date() >= arg.start && new Date() < arg.end;
     const day = formatDate(inView ? new Date() : current);
     setDate(day);
+    rangeRef.current = { start: arg.start, end: arg.end };
     load({ start: arg.start, end: arg.end }, day);
+  }
+
+  // Reload after booking (or any meeting change)
+  useEffect(
+    () =>
+      onCalendarRefresh(() => {
+        if (rangeRef.current && date) load(rangeRef.current, date);
+      }),
+    [load, date],
+  );
+
+  function bookStart() {
+    const api = calendarRef.current?.getApi();
+    const base = api ? api.getDate() : new Date();
+    const n = new Date();
+    const start = new Date(base);
+    if (start.toDateString() === n.toDateString()) start.setHours(n.getHours() + 1, 0, 0, 0);
+    else start.setHours(9, 0, 0, 0);
+    return start;
   }
 
   const events: EventInput[] = useMemo(
@@ -99,9 +126,22 @@ export function ColleagueSchedule() {
         title: b.title,
         start: b.start,
         end: b.end,
-        color: b.goal?.colour || DEFAULT_EVENT_COLOUR,
+        color:
+          b.rsvp === "pending"
+            ? "#ffffff"
+            : b.meeting_id
+              ? "#1967d2"
+              : b.goal?.colour || DEFAULT_EVENT_COLOUR,
+        ...(b.rsvp === "pending" && { contrastColor: "#174ea6" }),
         className: b.done ? "gcal-done" : undefined,
-        extendedProps: { done: b.done, subtitle: b.goal?.title ?? b.category ?? "" },
+        extendedProps: {
+          done: b.done,
+          meeting: !!b.meeting_id,
+          pending: b.rsvp === "pending",
+          accent: b.meeting_id ? "#1967d2" : b.goal?.colour || DEFAULT_EVENT_COLOUR,
+          subtitle:
+            b.rsvp === "pending" ? "Invited · no reply yet" : (b.goal?.title ?? b.category ?? ""),
+        },
       })),
     [data],
   );
@@ -141,6 +181,23 @@ export function ColleagueSchedule() {
               <ChevronLeft className="h-3.5 w-3.5" /> Back to team
             </Button>
             <div className="flex-1" />
+            {data && (
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 rounded-full bg-[#1967d2] px-3.5 text-xs text-white hover:bg-[#174ea6]"
+                onClick={() => {
+                  const start = bookStart();
+                  setBookInitial({
+                    guestIds: [userId],
+                    start,
+                    end: new Date(start.getTime() + 30 * 60_000),
+                  });
+                  setBookOpen(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> Book a meeting with {data.user.name.split(" ")[0]}
+              </Button>
+            )}
             {exportUrl && (
               <Button
                 variant="outline"
@@ -178,6 +235,7 @@ export function ColleagueSchedule() {
               Not a colleague or no access.
             </p>
           )}
+          <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} initial={bookInitial} />
         </div>
 
         {/* Side panel */}

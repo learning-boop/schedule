@@ -20,7 +20,7 @@ import dayGridPlugin from "@fullcalendar/react/daygrid";
 import timeGridPlugin from "@fullcalendar/react/timegrid";
 import interactionPlugin from "@fullcalendar/react/interaction";
 import monarchTheme from "@fullcalendar/react/themes/monarch";
-import { Check } from "lucide-react";
+import { Check, CircleHelp, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Google Calendar's event colours — used to tell people apart in team views */
@@ -89,16 +89,38 @@ function SlotLabel({ arg }: { arg: SlotHeaderInfo }) {
   return <span className="gcal-slot-label">{formatHourLabel(arg.text)}</span>;
 }
 
-/** Event block content: title, time and an optional subtitle (goal / person) */
+/**
+ * Event block content: title, time and an optional subtitle (goal / person).
+ * Meetings get a people icon; an invite you haven't answered yet is drawn as
+ * a dashed outline (extendedProps.pending, in extendedProps.accent colour).
+ */
 export function EventContent({ arg }: { arg: EventDisplayInfo }) {
   const { event, timeText, isShort } = arg;
   const done = !!event.extendedProps.done;
   const subtitle = (event.extendedProps.subtitle as string | undefined) || "";
+  const meeting = !!event.extendedProps.meeting;
+  const pending = !!event.extendedProps.pending;
+  const accent = (event.extendedProps.accent as string | undefined) || arg.color;
+  const icon = pending ? (
+    <CircleHelp className="gcal-check" strokeWidth={2.5} aria-label="Waiting for your reply" />
+  ) : meeting ? (
+    <Users className="gcal-check" strokeWidth={2.5} aria-label="Meeting" />
+  ) : null;
+  const outline = pending ? (
+    <span aria-hidden className="gcal-pending-outline" style={{ borderColor: accent }} />
+  ) : null;
 
   if (arg.view.type.startsWith("dayGrid")) {
     return (
       <div className="gcal-row-event">
-        <span className="gcal-dot" style={{ background: arg.color }} />
+        <span
+          className="gcal-dot"
+          style={
+            pending
+              ? { border: `2px solid ${accent}`, background: "transparent" }
+              : { background: arg.color }
+          }
+        />
         {timeText && <span className="gcal-row-time">{timeText}</span>}
         <span className={cn("gcal-row-title", done && "is-done")}>{event.title}</span>
       </div>
@@ -109,8 +131,9 @@ export function EventContent({ arg }: { arg: EventDisplayInfo }) {
     // One line, like Google Calendar: "Title, 1:30pm"
     return (
       <div className={cn("gcal-block is-short", done && "is-done")}>
+        {outline}
         <div className="gcal-short-line">
-          {done && <Check className="gcal-check" strokeWidth={3} aria-label="Done" />}
+          {done ? <Check className="gcal-check" strokeWidth={3} aria-label="Done" /> : icon}
           <span className="gcal-title-text">{event.title}</span>
           {timeText && <span className="gcal-block-time-inline">, {timeText}</span>}
         </div>
@@ -120,8 +143,9 @@ export function EventContent({ arg }: { arg: EventDisplayInfo }) {
 
   return (
     <div className={cn("gcal-block", done && "is-done")}>
+      {outline}
       <div className="gcal-block-title">
-        {done && <Check className="gcal-check" strokeWidth={3} aria-label="Done" />}
+        {done ? <Check className="gcal-check" strokeWidth={3} aria-label="Done" /> : icon}
         <span className="gcal-title-text">{event.title}</span>
       </div>
       {timeText && <div className="gcal-block-time">{timeText}</div>}

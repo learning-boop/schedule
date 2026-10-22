@@ -1,14 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+/** Only same-site paths, e.g. /invite/abc — never another site */
+function safeNext(next: string | null) {
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
+
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <Login />
+    </Suspense>
+  );
+}
+
+function Login() {
   const router = useRouter();
+  const next = safeNext(useSearchParams().get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +42,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
+    router.push(next);
     router.refresh();
   }
 
@@ -36,7 +50,9 @@ export default function LoginPage() {
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      },
     });
   }
 

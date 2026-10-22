@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { initials } from "@/components/calendar/gcal";
-import type { TeamBlock, TeamMember } from "./team-day-grid";
+import type { TeamBlock, TeamGroup } from "./team-day-grid";
 
 const LANE_H = 14;
 const MAX_LANES = 3;
@@ -30,7 +30,7 @@ type Bar = { block: TeamBlock; left: number; width: number; lane: number };
 
 /** Week overview: one row per person, one mini-timeline per day */
 export function TeamWeekTimeline({
-  members,
+  groups,
   blocks,
   weekStart,
   now,
@@ -38,7 +38,7 @@ export function TeamWeekTimeline({
   colourOf,
   onBlockClick,
 }: {
-  members: TeamMember[];
+  groups: TeamGroup[];
   blocks: TeamBlock[];
   weekStart: Date; // local Monday 00:00
   now: Date;
@@ -50,6 +50,8 @@ export function TeamWeekTimeline({
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
+  const members = useMemo(() => groups.flatMap((g) => g.members), [groups]);
+  const showTeams = groups.some((g) => g.teamName);
 
   // Visible hours: the working day, stretched to fit any earlier/later blocks
   const [axisStart, axisEnd] = useMemo(() => {
@@ -171,88 +173,104 @@ export function TeamWeekTimeline({
           );
         })}
 
-        {/* Rows */}
-        {members.map((m) => {
-          const colour = colourOf(m.id);
-          const done = Math.round((hours.done.get(m.id) ?? 0) * 10) / 10;
-          const planned = Math.round((hours.planned.get(m.id) ?? 0) * 10) / 10;
-          return (
-            <div key={m.id} className="contents">
-              <div className="sticky left-0 z-10 flex items-center gap-2.5 border-b bg-background px-3 py-3">
-                <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                  style={{ background: colour }}
-                >
-                  {initials(m.name)}
-                </span>
-                <div className="min-w-0">
-                  <Link
-                    href={m.id === meId ? "/week" : `/team/${m.id}`}
-                    className="block truncate text-sm font-medium hover:underline"
-                  >
-                    {m.name}
-                    {m.id === meId && (
-                      <span className="ml-1 text-xs text-muted-foreground">(you)</span>
-                    )}
-                  </Link>
-                  <p className="text-[11px] text-muted-foreground">
-                    {done}h done · {planned}h planned
-                  </p>
-                </div>
+        {/* Rows, by team */}
+        {groups.map((g) => (
+          <div key={g.teamId ?? "none"} className="contents">
+            {showTeams && (
+              <div
+                className="sticky left-0 z-10 border-b bg-muted/40 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
+                style={{ gridColumn: "1 / -1" }}
+              >
+                {g.teamName ?? "No team"}
               </div>
-              {days.map((_, i) => {
-                const list = bars.get(`${m.id}|${i}`) ?? [];
-                const lanes = Math.max(1, ...list.map((b) => b.lane + 1));
-                return (
-                  <div key={i} className="relative border-b border-l px-1.5 py-2">
-                    <div
-                      className="relative rounded-md bg-[#f1f3f4]"
-                      style={{ height: Math.max(2, lanes) * (LANE_H + 2) + 2 }}
+            )}
+            {g.members.map((m) => {
+              const colour = colourOf(m.id);
+              const done = Math.round((hours.done.get(m.id) ?? 0) * 10) / 10;
+              const planned = Math.round((hours.planned.get(m.id) ?? 0) * 10) / 10;
+              return (
+                <div key={m.id} className="contents">
+                  <div className="sticky left-0 z-10 flex items-center gap-2.5 border-b bg-background px-3 py-3">
+                    <span
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      style={{ background: colour }}
                     >
-                      {ticks.map((h) => (
-                        <span
-                          key={h}
-                          className="absolute inset-y-0 w-px bg-[#dadce0]"
-                          style={{ left: `${((h * 60 - axisMin) / axisLen) * 100}%` }}
-                        />
-                      ))}
-                      {list.map(({ block, left, width, lane }) => (
-                        <button
-                          key={block.id + i}
-                          type="button"
-                          onClick={(e) => onBlockClick(block, e)}
-                          title={`${block.title} · ${fmtTime(block.start)} – ${fmtTime(block.end)}${block.done ? " · done" : ""}`}
-                          className={cn(
-                            "absolute rounded-[3px] shadow-[0_0_0_1px_rgba(255,255,255,0.9)] transition-[filter] hover:brightness-90",
-                            block.done && "opacity-55",
-                          )}
-                          style={{
-                            left: `${left}%`,
-                            width: `${width}%`,
-                            top: 2 + lane * (LANE_H + 2),
-                            height: LANE_H,
-                            background: colour,
-                          }}
-                        />
-                      ))}
-                      {i === todayIndex && nowPct >= 0 && nowPct <= 100 && (
-                        <span
-                          className="pointer-events-none absolute -inset-y-1 w-0.5 rounded bg-[#ea4335]"
-                          style={{ left: `${nowPct}%` }}
-                        />
-                      )}
-                    </div>
-                    {list.length > 0 && (
-                      <p className="mt-1 truncate text-[10px] leading-tight text-muted-foreground">
-                        {list.length} block{list.length > 1 ? "s" : ""} · {list[0].block.title}
+                      {initials(m.name)}
+                    </span>
+                    <div className="min-w-0">
+                      <Link
+                        href={m.id === meId ? "/week" : `/team/${m.id}`}
+                        className="block truncate text-sm font-medium hover:underline"
+                      >
+                        {m.name}
+                        {m.id === meId && (
+                          <span className="ml-1 text-xs text-muted-foreground">(you)</span>
+                        )}
+                      </Link>
+                      <p className="text-[11px] text-muted-foreground">
+                        {done}h done · {planned}h planned
                       </p>
-                    )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          );
-        })}
+                  {days.map((_, i) => {
+                    const list = bars.get(`${m.id}|${i}`) ?? [];
+                    const lanes = Math.max(1, ...list.map((b) => b.lane + 1));
+                    return (
+                      <div key={i} className="relative border-b border-l px-1.5 py-2">
+                        <div
+                          className="relative rounded-md bg-[#f1f3f4]"
+                          style={{ height: Math.max(2, lanes) * (LANE_H + 2) + 2 }}
+                        >
+                          {ticks.map((h) => (
+                            <span
+                              key={h}
+                              className="absolute inset-y-0 w-px bg-[#dadce0]"
+                              style={{ left: `${((h * 60 - axisMin) / axisLen) * 100}%` }}
+                            />
+                          ))}
+                          {list.map(({ block, left, width, lane }) => {
+                            const pending = block.rsvp === "pending";
+                            return (
+                              <button
+                                key={block.id + i}
+                                type="button"
+                                onClick={(e) => onBlockClick(block, e)}
+                                title={`${block.title} · ${fmtTime(block.start)} – ${fmtTime(block.end)}${block.done ? " · done" : ""}${pending ? " · invited, no reply yet" : ""}`}
+                                className={cn(
+                                  "absolute rounded-[3px] shadow-[0_0_0_1px_rgba(255,255,255,0.9)] transition-[filter] hover:brightness-90",
+                                  block.done && "opacity-55",
+                                  pending && "border-[1.5px] border-dashed bg-white",
+                                )}
+                                style={{
+                                  left: `${left}%`,
+                                  width: `${width}%`,
+                                  top: 2 + lane * (LANE_H + 2),
+                                  height: LANE_H,
+                                  ...(pending ? { borderColor: colour } : { background: colour }),
+                                }}
+                              />
+                            );
+                          })}
+                          {i === todayIndex && nowPct >= 0 && nowPct <= 100 && (
+                            <span
+                              className="pointer-events-none absolute -inset-y-1 w-0.5 rounded bg-[#ea4335]"
+                              style={{ left: `${nowPct}%` }}
+                            />
+                          )}
+                        </div>
+                        {list.length > 0 && (
+                          <p className="mt-1 truncate text-[10px] leading-tight text-muted-foreground">
+                            {list.length} block{list.length > 1 ? "s" : ""} · {list[0].block.title}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
       {members.length === 0 && (
         <p className="p-8 text-center text-sm text-muted-foreground">

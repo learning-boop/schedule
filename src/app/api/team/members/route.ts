@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 
-/** GET /api/team/members — list all colleagues in the org, grouped by manager */
+/** GET /api/team/members — everyone in the company, grouped by team */
 export async function GET(request: Request) {
   const me = await getAuthUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -11,51 +11,51 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("q")?.toLowerCase();
 
-  let users = await prisma.user.findMany({
-    where: { org_id: me.org_id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      manager_id: true,
-    },
-    orderBy: { name: "asc" },
-  });
+  const [allUsers, teams] = await Promise.all([
+    prisma.user.findMany({
+      where: { org_id: me.org_id },
+      select: { id: true, name: true, email: true, role: true, manager_id: true, team_id: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.team.findMany({
+      where: { org_id: me.org_id },
+      select: { id: true, name: true, lead_id: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
-  if (search) {
-    users = users.filter(
-      (u) => u.name.toLowerCase().includes(search) || u.email.toLowerCase().includes(search),
-    );
-  }
+  const users = search
+    ? allUsers.filter(
+        (u) => u.name.toLowerCase().includes(search) || u.email.toLowerCase().includes(search),
+      )
+    : allUsers;
 
-  // Group by manager
-  const managers = new Map<string | null, typeof users>();
-  for (const u of users) {
-    const key = u.manager_id;
-    if (!managers.has(key)) managers.set(key, []);
-    managers.get(key)!.push(u);
-  }
-
-  // Build grouped result
-  const grouped: { managerId: string | null; managerName: string | null; members: typeof users }[] =
-    [];
-  for (const [managerId, members] of managers) {
-    const mgr = managerId ? users.find((u) => u.id === managerId) : null;
-    grouped.push({
-      managerId,
-      managerName: mgr?.name ?? (managerId ? "Unknown Manager" : null),
-      members,
-    });
-  }
+  const grouped: {
+    teamId: string | null;
+    teamName: string | null;
+    leadId: string | null;
+    members: typeof users;
+  }[] = teams.map((t) => ({
+    teamId: t.id,
+    teamName: t.name,
+    leadId: t.lead_id,
+    members: users
+      .filter((u) => u.team_id === t.id)
+      // Lead first
+      .sort((a, b) => (a.id === t.lead_id ? -1 : b.id === t.lead_id ? 1 : 0)),
+  }));
+  const noTeam = users.filter((u) => !u.team_id || !teams.some((t) => t.id === u.team_id));
+  if (noTeam.length) grouped.push({ teamId: null, teamName: null, leadId: null, members: noTeam });
 
   return NextResponse.json({
-    me: { id: me.id, role: me.role, org_id: me.org_id },
+    me: { id: me.id, role: me.role, org_id: me.org_id, team_id: me.team_id },
     org: {
       name: me.organisation?.name,
       planner_visibility: me.organisation?.planner_visibility,
       allow_comments: me.organisation?.allow_comments,
     },
-    grouped,
+    teams,
+    members: allUsers,
+    grouped: grouped.filter((g) => g.members.length > 0 || !search),
   });
 }

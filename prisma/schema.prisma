@@ -19,35 +19,46 @@ enum Role {
 }
 
 model Organisation {
-  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                String
-  plan                String             @default("free")
-  seats               Int                @default(5)
-  planner_visibility  PlannerVisibility  @default(schedule)
-  allow_comments      Boolean            @default(false)
-  created_at          DateTime           @default(now()) @db.Timestamptz
-  updated_at          DateTime           @updatedAt @db.Timestamptz
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  plan               String            @default("free")
+  seats              Int               @default(5)
+  planner_visibility PlannerVisibility @default(schedule)
+  allow_comments     Boolean           @default(false)
+  /// Working days (ISO weekday numbers, 1 = Monday … 7 = Sunday) and hours
+  /// (minutes from midnight, in each viewer's own time zone). Used to suggest
+  /// meeting times when everyone is free.
+  work_days          Int[]             @default([1, 2, 3, 4, 5, 6])
+  work_start         Int               @default(540)
+  work_end           Int               @default(1080)
+  created_at         DateTime          @default(now()) @db.Timestamptz
+  updated_at         DateTime          @updatedAt @db.Timestamptz
 
   users          User[]
   invites        Invite[]
   goal_templates GoalTemplate[]
+  teams          Team[]
+  meetings       Meeting[]
 
   @@map("organisations")
 }
 
 model User {
-  id          String   @id @db.Uuid // matches auth.users.id
-  org_id      String?  @db.Uuid
-  role        Role     @default(employee)
-  manager_id  String?  @db.Uuid
-  name        String
-  email       String   @unique
-  created_at  DateTime @default(now()) @db.Timestamptz
-  updated_at  DateTime @updatedAt @db.Timestamptz
+  id         String   @id @db.Uuid // matches auth.users.id
+  org_id     String?  @db.Uuid
+  role       Role     @default(employee)
+  manager_id String?  @db.Uuid
+  team_id    String?  @db.Uuid
+  name       String
+  email      String   @unique
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
 
   organisation Organisation? @relation(fields: [org_id], references: [id])
   manager      User?         @relation("ManagerReports", fields: [manager_id], references: [id])
   reports      User[]        @relation("ManagerReports")
+  team         Team?         @relation("TeamMembers", fields: [team_id], references: [id], onDelete: SetNull)
+  teams_led    Team[]        @relation("TeamLead")
 
   goals         Goal[]
   time_blocks   TimeBlock[]
@@ -56,35 +67,41 @@ model User {
   monthly_plans MonthlyPlan[]
   pdf_exports   PdfExport[]
 
+  invites_sent       Invite[]       @relation("InviteSender")
+  meetings_organised Meeting[]      @relation("MeetingOrganiser")
+  meeting_guests     MeetingGuest[]
+  notifications      Notification[] @relation("NotificationRecipient")
+  notifications_sent Notification[] @relation("NotificationActor")
+
   @@map("users")
 }
 
 model Goal {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id   String   @db.Uuid
-  title     String
-  rank      Int      @default(0)
-  deadline  DateTime? @db.Date
-  colour    String   @default("#6366f1")
-  status    String   @default("active")
-  created_at DateTime @default(now()) @db.Timestamptz
-  updated_at DateTime @updatedAt @db.Timestamptz
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  title      String
+  rank       Int       @default(0)
+  deadline   DateTime? @db.Date
+  colour     String    @default("#6366f1")
+  status     String    @default("active")
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
 
-  user      User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  sub_goals SubGoal[]
-  actions   Action[]
+  user        User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  sub_goals   SubGoal[]
+  actions     Action[]
   time_blocks TimeBlock[]
 
   @@map("goals")
 }
 
 model SubGoal {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  goal_id   String    @db.Uuid
-  title     String
-  deadline  DateTime? @db.Date
-  done      Boolean   @default(false)
-  created_at DateTime @default(now()) @db.Timestamptz
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goal_id    String    @db.Uuid
+  title      String
+  deadline   DateTime? @db.Date
+  done       Boolean   @default(false)
+  created_at DateTime  @default(now()) @db.Timestamptz
 
   goal Goal @relation(fields: [goal_id], references: [id], onDelete: Cascade)
 
@@ -92,11 +109,11 @@ model SubGoal {
 }
 
 model Action {
-  id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  goal_id String  @db.Uuid
-  title   String
-  done    Boolean @default(false)
-  order   Int     @default(0)
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  goal_id    String   @db.Uuid
+  title      String
+  done       Boolean  @default(false)
+  order      Int      @default(0)
   created_at DateTime @default(now()) @db.Timestamptz
 
   goal Goal @relation(fields: [goal_id], references: [id], onDelete: Cascade)
@@ -105,33 +122,39 @@ model Action {
 }
 
 model TimeBlock {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id   String   @db.Uuid
-  goal_id   String?  @db.Uuid
-  title     String
-  start     DateTime @db.Timestamptz
-  end       DateTime @db.Timestamptz
-  done      Boolean  @default(false)
-  work_note String?
-  category  String?
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  goal_id    String?  @db.Uuid
+  title      String
+  start      DateTime @db.Timestamptz
+  end        DateTime @db.Timestamptz
+  done       Boolean  @default(false)
+  work_note  String?
+  category   String?
+  /// Set when this block is someone's copy of a meeting
+  meeting_id String?  @db.Uuid
+  /// For meeting blocks: "pending" until the guest replies, then "accepted"
+  rsvp       String?
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 
-  user User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  goal Goal? @relation(fields: [goal_id], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  goal    Goal?    @relation(fields: [goal_id], references: [id], onDelete: SetNull)
+  meeting Meeting? @relation(fields: [meeting_id], references: [id], onDelete: Cascade)
 
+  @@index([meeting_id])
   @@map("time_blocks")
 }
 
 model DailyPage {
-  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id  String   @db.Uuid
-  date     DateTime @db.Date
-  top3     Json     @default("[]")
-  matrix   Json     @default("{}")
-  water    Int      @default(0)
-  fitness  String?
-  notes    String?
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  date       DateTime @db.Date
+  top3       Json     @default("[]")
+  matrix     Json     @default("{}")
+  water      Int      @default(0)
+  fitness    String?
+  notes      String?
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 
@@ -158,14 +181,14 @@ model WeeklyPlan {
 }
 
 model MonthlyPlan {
-  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id  String   @db.Uuid
-  month    DateTime @db.Date
-  top3     Json     @default("[]")
-  focus    String?
-  swot     Json     @default("{}")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  month      DateTime @db.Date
+  top3       Json     @default("[]")
+  focus      String?
+  swot       Json     @default("{}")
   /// Workbook "Date and Day" grid (Week 1–5 × Mon–Sun): { "<day of month>": "plan text" }
-  day_plans Json    @default("{}")
+  day_plans  Json     @default("{}")
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
 
@@ -204,16 +227,101 @@ model PdfExport {
 }
 
 model Invite {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  org_id     String   @db.Uuid
-  email      String
-  role       Role     @default(employee)
-  manager_id String?  @db.Uuid
-  token      String   @unique @default(dbgenerated("gen_random_uuid()"))
-  expires_at DateTime @db.Timestamptz
-  created_at DateTime @default(now()) @db.Timestamptz
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id      String    @db.Uuid
+  email       String
+  role        Role      @default(employee)
+  manager_id  String?   @db.Uuid
+  team_id     String?   @db.Uuid
+  invited_by  String?   @db.Uuid
+  token       String    @unique @default(dbgenerated("gen_random_uuid()"))
+  expires_at  DateTime  @db.Timestamptz
+  accepted_at DateTime? @db.Timestamptz
+  revoked_at  DateTime? @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
 
   organisation Organisation @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [team_id], references: [id], onDelete: SetNull)
+  inviter      User?        @relation("InviteSender", fields: [invited_by], references: [id], onDelete: SetNull)
 
+  @@index([org_id])
   @@map("invites")
+}
+
+/// A group of people inside a company (e.g. Design, Development)
+model Team {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id     String   @db.Uuid
+  name       String
+  lead_id    String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @updatedAt @db.Timestamptz
+
+  organisation Organisation @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  lead         User?        @relation("TeamLead", fields: [lead_id], references: [id], onDelete: SetNull)
+  members      User[]       @relation("TeamMembers")
+  invites      Invite[]
+
+  @@unique([org_id, name])
+  @@map("teams")
+}
+
+/// A meeting booked between colleagues. Every person taking part (organiser
+/// included) gets a TimeBlock linked to it, so meetings show up in calendars,
+/// hours worked, "Right now" and PDF exports like any other block.
+model Meeting {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id       String   @db.Uuid
+  organiser_id String   @db.Uuid
+  title        String
+  agenda       String?
+  location     String?
+  start        DateTime @db.Timestamptz
+  end          DateTime @db.Timestamptz
+  created_at   DateTime @default(now()) @db.Timestamptz
+  updated_at   DateTime @updatedAt @db.Timestamptz
+
+  organisation  Organisation   @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  organiser     User           @relation("MeetingOrganiser", fields: [organiser_id], references: [id], onDelete: Cascade)
+  guests        MeetingGuest[]
+  time_blocks   TimeBlock[]
+  notifications Notification[]
+
+  @@index([org_id, start])
+  @@map("meetings")
+}
+
+model MeetingGuest {
+  meeting_id   String    @db.Uuid
+  user_id      String    @db.Uuid
+  /// "pending" | "accepted" | "declined"
+  response     String    @default("pending")
+  note         String?
+  responded_at DateTime? @db.Timestamptz
+
+  meeting Meeting @relation(fields: [meeting_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([meeting_id, user_id])
+  @@index([user_id])
+  @@map("meeting_guests")
+}
+
+model Notification {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  actor_id   String?   @db.Uuid
+  meeting_id String?   @db.Uuid
+  /// meeting_invite | meeting_response | meeting_moved | meeting_cancelled | member_joined
+  type       String
+  data       Json      @default("{}")
+  read_at    DateTime? @db.Timestamptz
+  created_at DateTime  @default(now()) @db.Timestamptz
+
+  user    User     @relation("NotificationRecipient", fields: [user_id], references: [id], onDelete: Cascade)
+  actor   User?    @relation("NotificationActor", fields: [actor_id], references: [id], onDelete: SetNull)
+  meeting Meeting? @relation(fields: [meeting_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@map("notifications")
 }

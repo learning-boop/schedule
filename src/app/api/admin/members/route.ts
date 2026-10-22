@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
+import { syncTeamReporting } from "@/lib/teams";
+import { leaveCompanyMeetings } from "@/lib/meetings";
+import { appOrigin } from "@/lib/app-url";
 
-/** PUT /api/admin/members — founder: change role or manager of a user */
+/** PUT /api/admin/members — founder: change role, manager or team of a user */
 export async function PUT(request: Request) {
   const me = await getAuthUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -10,7 +13,7 @@ export async function PUT(request: Request) {
   if (!me.org_id) return NextResponse.json({ error: "No organisation" }, { status: 403 });
 
   const body = await request.json();
-  const { userId, role, managerId } = body;
+  const { userId, role, managerId, teamId } = body;
 
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
@@ -39,14 +42,38 @@ export async function PUT(request: Request) {
     updates.manager_id = managerId || null;
   }
 
+  let newTeamLead: string | null | undefined;
+  if (teamId !== undefined) {
+    if (teamId) {
+      const team = await prisma.team.findUnique({ where: { id: teamId } });
+      if (!team || team.org_id !== me.org_id) {
+        return NextResponse.json({ error: "Team not in your org" }, { status: 400 });
+      }
+      newTeamLead = team.lead_id;
+      updates.team_id = team.id;
+    } else {
+      updates.team_id = null;
+    }
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid updates" }, { status: 400 });
   }
 
-  const updated = await prisma.user.update({
+  await prisma.user.update({ where: { id: userId }, data: updates });
+
+  // An employee can't lead a team
+  if (updates.role === "employee") {
+    await prisma.team.updateMany({ where: { lead_id: userId }, data: { lead_id: null } });
+  }
+  // Moving into a team: report to its lead (unless a manager was chosen too)
+  if (typeof updates.team_id === "string" && managerId === undefined && newTeamLead !== userId) {
+    await syncTeamReporting(updates.team_id);
+  }
+
+  const updated = await prisma.user.findUnique({
     where: { id: userId },
-    data: updates,
-    select: { id: true, name: true, email: true, role: true, manager_id: true },
+    select: { id: true, name: true, email: true, role: true, manager_id: true, team_id: true },
   });
 
   return NextResponse.json(updated);
@@ -70,11 +97,18 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "User not in your org" }, { status: 404 });
   }
 
+  // Upcoming meetings: theirs are cancelled, and they leave everyone else's
+  await leaveCompanyMeetings(target, me.org_id, appOrigin(request), searchParams.get("tz"));
+
   // Remove from org (don't delete the user, just unassign)
-  await prisma.user.update({
-    where: { id: userId },
-    data: { org_id: null, role: "employee", manager_id: null },
-  });
+  await prisma.$transaction([
+    prisma.team.updateMany({ where: { lead_id: userId }, data: { lead_id: null } }),
+    prisma.user.updateMany({ where: { manager_id: userId }, data: { manager_id: null } }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { org_id: null, role: "employee", manager_id: null, team_id: null },
+    }),
+  ]);
 
   return NextResponse.json({ ok: true });
 }
