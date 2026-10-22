@@ -53,7 +53,8 @@
       "Bash(cd D:/creative_touch/schedule && node -e \"\nconst fs = require\\('fs'\\);\nconst pkg = JSON.parse\\(fs.readFileSync\\('package.json','utf8'\\)\\);\npkg.scripts.build = 'prisma generate && next build';\nfs.writeFileSync\\('package.json', JSON.stringify\\(pkg, null, 2\\) + '\\\\n'\\);\nconsole.log\\('Updated build script:', pkg.scripts.build\\);\n\")",
       "Bash(cd D:/creative_touch/schedule && npx vercel whoami 2>&1)",
       "Bash(cd D:/creative_touch/schedule && gh run list --limit 3 2>&1)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(cd D:/creative_touch/schedule && npx prisma generate)"
     ]
   }
 }
