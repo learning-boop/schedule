@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { appOrigin, inviteLink } from "@/lib/app-url";
 import { canManageInvite, emailInvite, inviteExpiry, newInviteToken } from "@/lib/invites";
 
+// Invite emails are sent before replying, so allow time for a slow mail server
+export const maxDuration = 60;
+
 /**
  * POST /api/invites/:id/resend — a fresh link valid for another 7 days (the
  * old link stops working), emailed again when email is set up.

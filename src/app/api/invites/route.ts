@@ -16,6 +16,9 @@ import {
 
 const JOINED_DAYS = 30;
 
+// Invite emails are sent before replying, so allow time for a slow mail server
+export const maxDuration = 60;
+
 /**
  * GET /api/invites — invites the caller can see (founders: all; team leads:
  * theirs), plus who joined recently and the teams the caller can invite into.
